@@ -1,164 +1,364 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="UTF-8" />
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
-    <title>OTT AB 实验分析工具-网页版</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.57.0/build/stlite.css" />
-  </head>
-  <body>
-    <div id="root"></div>
-    <script src="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.57.0/build/stlite.js"></script>
-    <script>
-      stlite.mount(
-        {
-          // 关键修正：添加了 pyarrow 依赖，并锁定了部分库的版本以确保兼容性
-          requirements: ["pandas", "numpy", "plotly", "statsmodels", "scipy", "openpyxl", "pyarrow"],
-          entrypoint: "app.py",
-          files: {
-            "app.py": `
-import streamlit as st
-import pandas as pd
-import numpy as np
-from scipy import stats
-from statsmodels.stats.proportion import proportions_ztest
-import plotly.graph_objects as go
-import io
-import re
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>OTT AB实验智慧分析系统 v4.0 (终极稳定版)</title>
+    <!-- 强制使用稳定的脚本源 -->
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jstat@latest/dist/jstat.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .card { background: white; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); border: 1px solid #edf2f7; }
+        .log-item { border-bottom: 1px solid #334155; padding: 2px 0; }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen p-4 md:p-8 text-slate-800 font-sans">
 
-st.set_page_config(page_title="OTT AB万能分析助手", layout="wide")
+<div class="max-w-6xl mx-auto">
+    <!-- Header -->
+    <header class="flex justify-between items-end mb-8">
+        <div>
+            <h1 class="text-3xl font-black text-slate-900 tracking-tighter">OTT AB分析看板 <span class="text-blue-600 italic">v4.0</span></h1>
+            <p class="text-slate-400 font-medium text-sm mt-1 uppercase tracking-widest">记得V张昭颖50</p>
+        </div>
+        <div class="hidden md:block bg-blue-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg">
+            统计逻辑：双样本比例 Z 检验
+        </div>
+    </header>
 
-st.title("📺 OTT 大屏 AB 实验万能分析工具 (纯网页版)")
-st.caption("基于 WebAssembly 技术，数据处理在本地浏览器完成，保障安全性。")
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <!-- 操作区 -->
+        <aside class="lg:col-span-1 space-y-6">
+            <div class="card p-6">
+                <h2 class="text-xs font-black text-slate-400 mb-4 uppercase">1. 数据源导入</h2>
+                <input type="file" id="fileInput" class="hidden" accept=".xlsx,.xls,.csv" />
+                <button onclick="document.getElementById('fileInput').click()" class="w-full border-2 border-dashed border-slate-200 rounded-xl py-10 text-slate-400 hover:border-blue-400 hover:bg-blue-50 transition-all flex flex-col items-center group">
+                    <svg class="w-8 h-8 mb-2 group-hover:text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                    <span class="text-xs font-bold">点击上传原始报表</span>
+                </button>
+                
+                <!-- 实时日志系统 -->
+                <div class="mt-4 bg-slate-800 rounded-lg p-3 text-[10px] text-emerald-400 font-mono h-32 overflow-y-auto" id="sysLog">
+                    <div>> 系统待命...</div>
+                </div>
+            </div>
 
-# --- 1. 核心工具函数 ---
-def find_col(columns, keywords):
-    for k in keywords:
-        for c in columns:
-            if k.lower() in str(c).lower():
-                return c
-    return None
+            <div id="setupCard" class="card p-6 hidden animate-in slide-in-from-left duration-300">
+                <h2 class="text-xs font-black text-slate-400 mb-4 uppercase">2. 维度匹配</h2>
+                <div class="space-y-4">
+                    <div><label class="text-[10px] font-bold text-slate-500 block mb-1">日期字段</label><select id="dateCol" class="w-full border rounded p-2 text-xs font-bold"></select></div>
+                    <div><label class="text-[10px] font-bold text-slate-500 block mb-1">细分人群字段</label><select id="groupCol" class="w-full border rounded p-2 text-xs font-bold"></select></div>
+                    <div><label class="text-[10px] font-bold text-slate-500 block mb-1">分母 (曝光/UV)</label><select id="denomCol" class="w-full border rounded p-2 text-xs font-bold"></select></div>
+                    <div><label class="text-[10px] font-bold text-slate-500 block mb-1">分子 (点击/转化)</label><select id="numCol" class="w-full border rounded p-2 text-xs font-bold"></select></div>
+                    
+                    <div class="bg-slate-50 p-3 rounded-lg border border-slate-100 mt-4">
+                        <label class="text-[10px] font-black text-blue-600 block mb-2 uppercase">角色分配</label>
+                        <div class="space-y-2">
+                            <div class="flex items-center justify-between text-[10px] font-bold text-slate-400"><span>策略组 (A)</span></div>
+                            <select id="sGroup" class="w-full border-blue-200 rounded p-1.5 text-xs font-bold text-blue-700"></select>
+                            <div class="flex items-center justify-between text-[10px] font-bold text-slate-400"><span>对照组 (B)</span></div>
+                            <select id="cGroup" class="w-full border-slate-200 rounded p-1.5 text-xs font-bold text-slate-600"></select>
+                        </div>
+                    </div>
+                    <button id="runBtn" class="w-full bg-slate-900 text-white font-bold py-3 rounded-xl hover:bg-black transition-all shadow-xl">开始科学分析</button>
+                </div>
+            </div>
+        </aside>
 
-def normalize_data(df):
-    # 强制转换列名
-    df.columns = [str(c).strip() for c in df.columns]
-    cols = df.columns.tolist()
-    
-    # 检查是否为矩阵模式 (日期在表头)
-    date_pattern = r'\\d{4}-\\d{2}-\\d{2}'
-    found_date_cols = [c for c in cols if re.search(date_pattern, str(c))]
-    
-    if len(found_date_cols) > 2:
-        id_vars = [c for c in cols if c not in found_date_cols]
-        df_melted = df.melt(id_vars=id_vars, value_vars=found_date_cols, var_name='日期', value_name='数值')
-        desc_col = find_col(id_vars, ['指标', '筛选', '事件', '人群'])
-        
-        def parse_label(text):
-            text = str(text)
-            group = 'A组(策略)' if 'A' in text or '策略' in text else 'B组(对照)'
-            metric = '曝光' if '曝光' in text or 'show' in text else '点击'
-            return group, metric
+        <!-- 展示区 -->
+        <main class="lg:col-span-3 space-y-6">
+            <div id="resultArea" class="hidden">
+                <!-- 趋势图表 -->
+                <div class="card p-6 mb-6">
+                    <h2 class="text-lg font-bold mb-4 flex items-center gap-2">
+                        <span class="w-2 h-2 bg-blue-500 rounded-full"></span> 每日转化率趋势走势
+                    </h2>
+                    <div class="h-[280px]"><canvas id="trendChart"></canvas></div>
+                </div>
 
-        df_melted[['组别', '指标类型']] = df_melted[desc_col].apply(lambda x: pd.Series(parse_label(x)))
-        df_norm = df_melted.pivot_table(index=['日期', '组别'], columns='指标类型', values='数值', aggfunc='sum').reset_index()
-        # 确保列名存在
-        if '曝光' not in df_norm.columns: df_norm['曝光'] = 0
-        if '点击' not in df_norm.columns: df_norm['点击'] = 0
-        return df_norm, '曝光', '点击', '日期', '组别'
-    else:
-        df = df.ffill()
-        col_date = find_col(cols, ['日期', '时间', 'date'])
-        col_group_info = find_col(cols, ['人群', '组别', '筛选', 'Group'])
-        col_exp = find_col(cols, ['曝光', 'show', 'PV', 'UV'])
-        col_clk = find_col(cols, ['点击', 'click'])
-        
-        df['组别'] = df[col_group_info].apply(lambda x: 'A组(策略)' if 'A' in str(x) or '策略' in str(x) else 'B组(对照)')
-        return df, col_exp, col_clk, col_date, '组别'
+                <!-- 汇总表 -->
+                <div class="card overflow-hidden">
+                    <div class="p-6 flex justify-between items-center bg-slate-50 border-b">
+                        <h2 class="text-lg font-black italic">AB 实验复盘汇总报告</h2>
+                        <button id="exportBtn" class="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg transition-all">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1M16 9l-4-4m0 0L8 9m4-4v12"></path></svg>
+                            一键导出 Excel
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto text-sm">
+                        <table class="w-full text-left border-collapse" id="viewTable">
+                            <thead class="bg-slate-800 text-white font-bold text-[10px] uppercase tracking-widest">
+                                <tr>
+                                    <th class="p-4 border border-slate-700">人群</th>
+                                    <th class="p-4 border border-slate-700">行为时间</th>
+                                    <th class="p-4 border border-slate-700 text-right">曝光人数(日均)</th>
+                                    <th class="p-4 border border-slate-700 text-right">点击人数(日均)</th>
+                                    <th class="p-4 border border-slate-700 text-right">CTR</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tableBody"></tbody>
+                        </table>
+                    </div>
+                    <!-- 智能结论 -->
+                    <div id="verdictArea" class="p-8 border-t bg-white"></div>
+                </div>
 
-# --- 2. 导入数据 ---
-uploaded_file = st.file_uploader("上传您的数据 (支持流水账或横向矩阵)", type=["xlsx", "csv"])
-
-if uploaded_file:
-    try:
-        df_raw = pd.read_excel(uploaded_file) if uploaded_file.name.endswith('.xlsx') else pd.read_csv(uploaded_file)
-        df, c_exp, c_clk, c_date, c_grp = normalize_data(df_raw)
-        
-        # 排除合计行
-        exclude_kws = ["合计", "汇总", "总计"]
-        mask_sum = df.astype(str).apply(lambda x: x.str.contains('|'.join(exclude_kws))).any(axis=1)
-        df = df[~mask_sum].reset_index(drop=True)
-
-        def get_stats(data_sub):
-            d_a = data_sub[data_sub[c_grp].str.contains('A组')]
-            d_b = data_sub[data_sub[c_grp].str.contains('B组')]
-            n_a, c_a = d_a[c_exp].sum(), d_a[c_clk].sum()
-            n_b, c_b = d_b[c_exp].sum(), d_b[c_clk].sum()
-            r_a = c_a / n_a if n_a > 0 else 0
-            r_b = c_b / n_b if n_b > 0 else 0
-            lift = (r_a - r_b) / r_b if r_b > 0 else 0
-            p = 1.0
-            if n_a > 5 and n_b > 5:
-                try: _, p = proportions_ztest([c_a, c_b], [n_a, n_b])
-                except: p = 1.0
-            return n_a, c_a, r_a, n_b, c_b, r_b, lift, p
-
-        # 核心看板
-        res = get_stats(df)
-        st.write("---")
-        st.subheader("🚀 实验核心结论")
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("策略组(A) 转化率", f"{res[2]:.2%}")
-        c2.metric("对照组(B) 转化率", f"{res[5]:.2%}")
-        c3.metric("提升度", f"{res[6]:+.2%}")
-        c4.metric("显著性P值", f"{res[7]:.4f}", delta="显著" if res[7]<0.05 else "不显著")
-
-        # 趋势图 - 修正：使用更兼容的 go.Figure 避免 pyarrow 报错
-        st.write("---")
-        st.subheader("📈 每日转化率走势")
-        trend_data = []
-        for day, group in df.groupby(c_date):
-            _, _, ra, _, _, rb, _, _ = get_stats(group)
-            trend_data.append({"时间": str(day), "A": ra, "B": rb})
-        tdf = pd.DataFrame(trend_data)
-        
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=tdf['时间'], y=tdf['A'], name='策略组(A)', line=dict(color='#FF4B4B')))
-        fig.add_trace(go.Scatter(x=tdf['时间'], y=tdf['B'], name='对照组(B)', line=dict(color='#0068C9')))
-        fig.update_layout(yaxis_tickformat='.2%', hovermode="x unified", height=400)
-        st.plotly_chart(fig, use_container_width=True)
-
-        # 汇报报表导出
-        st.write("---")
-        st.subheader("📋 汇报专用日均表")
-        days = df[c_date].nunique()
-        report_data = [
-            {"人群": "A人群（策略）", "时间": f"{days}天日均", "曝光": round(res[0]/days), "点击": round(res[1]/days), "CTR": f"{res[2]:.2%}"},
-            {"人群": "B人群（对照）", "时间": f"{days}天日均", "曝光": round(res[3]/days), "点击": round(res[4]/days), "CTR": f"{res[5]:.2%}"},
-            {"人群": "对比", "时间": "-", "曝光": f"{(res[0]-res[3])/res[3]:+.2%}" if res[3]>0 else "-", "点击": f"{(res[1]-res[4])/res[4]:+.2%}" if res[4]>0 else "-", "CTR": f"{res[6]:+.2%}"},
-            {"人群": "p值", "时间": "-", "曝光": "", "点击": "", "CTR": f"{res[7]:.4f}"}
-        ]
-        report_df = pd.DataFrame(report_data)
-        st.table(report_df)
-
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            report_df.to_excel(writer, index=False)
-        st.download_button("📥 导出汇报 Excel", output.getvalue(), "AB复盘报告.xlsx")
-
-        st.write("---")
-        with st.expander("📚 统计学原理与 Z 检验说明"):
-            st.markdown("本工具采用双样本比例 Z 检验。P值代表差异由偶然引起的概率。P < 0.05 意味着提升是显著且真实的。")
+                <!-- 小白百科 -->
+                <div class="mt-6 p-4 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-800 leading-relaxed">
+                    <b>💡 统计学笔记：</b> 本系统采用 <span class="font-bold underline italic">双样本比例 Z 检验</span>。 
+                    如果 <b>P 值 < 0.05</b>，说明差异极大概率是真实的策略提升；如果 <b>P 值 >= 0.05</b>，说明两组差异可能纯属随机波动。
+                </div>
+            </div>
             
-    except Exception as e:
-        st.error(f"解析出错: {e}")
-else:
-    st.info("👋 欢迎！直接上传 Excel 文件即可开始分析。数据仅在浏览器本地处理，安全保密。")
-`,
-          },
-        },
-        document.getElementById("root")
-      );
-    </script>
-  </body>
+            <!-- 欢迎界面 -->
+            <div id="welcome" class="flex flex-col items-center justify-center py-32 text-slate-300">
+                <div class="bg-slate-100 p-6 rounded-full mb-4 animate-bounce">
+                    <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                </div>
+                <p class="font-bold tracking-widest uppercase text-xs">Waiting for your Excel file...</p>
+            </div>
+        </main>
+    </div>
+</div>
+
+<script>
+    // 系统状态管理
+    const state = {
+        rawData: [],
+        headers: [],
+        finalReport: null,
+        chart: null
+    };
+
+    function addLog(msg) {
+        const logBox = document.getElementById('sysLog');
+        const div = document.createElement('div');
+        div.className = 'log-item';
+        div.innerText = `> ${msg}`;
+        logBox.appendChild(div);
+        logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    // 1. 深度文件解析引擎
+    document.getElementById('fileInput').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        addLog(`读取文件: ${file.name}`);
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+            try {
+                const data = new Uint8Array(evt.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                
+                // 深度扫描寻找真实的表头行
+                const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: null });
+                let headerRowIdx = -1;
+                for(let i=0; i<Math.min(rows.length, 20); i++) {
+                    if(rows[i].some(cell => cell !== null && cell !== "")) {
+                        headerRowIdx = i;
+                        break;
+                    }
+                }
+
+                if (headerRowIdx === -1) throw "找不到有效表头，请确认 Excel 内容";
+                
+                state.headers = rows[headerRowIdx].filter(h => h !== null && h !== "");
+                state.rawData = XLSX.utils.sheet_to_json(firstSheet, { range: headerRowIdx, defval: 0 });
+                
+                addLog(`解析成功! 发现 ${state.rawData.length} 行数据`);
+                addLog(`识别字段: ${state.headers.slice(0, 3).join(', ')}...`);
+                
+                initSetupUI();
+            } catch (err) {
+                addLog(`ERROR: ${err}`);
+                alert("读取失败: " + err);
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    });
+
+    function initSetupUI() {
+        const ids = ['dateCol', 'groupCol', 'denomCol', 'numCol'];
+        ids.forEach(id => {
+            const sel = document.getElementById(id);
+            sel.innerHTML = "";
+            state.headers.forEach(h => sel.add(new Option(h, h)));
+        });
+
+        // 智能模糊匹配默认字段
+        document.getElementById('dateCol').value = state.headers.find(h => h.includes('日期')) || state.headers[0];
+        document.getElementById('groupCol').value = state.headers.find(h => h.includes('细分') || h.includes('人群')) || state.headers[0];
+        document.getElementById('denomCol').value = state.headers.find(h => h.includes('曝光') || h.includes('UV')) || state.headers[0];
+        document.getElementById('numCol').value = state.headers.find(h => h.includes('点击') || h.includes('支付')) || state.headers[0];
+
+        updateRoleSelections();
+        document.getElementById('groupCol').onchange = updateRoleSelections;
+        
+        document.getElementById('welcome').classList.add('hidden');
+        document.getElementById('setupCard').classList.remove('hidden');
+        addLog("维度识别就绪，等待角色分配...");
+    }
+
+    function updateRoleSelections() {
+        const groupKey = document.getElementById('groupCol').value;
+        const uniqueValues = [...new Set(state.rawData.map(r => String(r[groupKey] || "")))].filter(v => v && !v.includes('合计'));
+        
+        const sg = document.getElementById('sGroup'), cg = document.getElementById('cGroup');
+        sg.innerHTML = cg.innerHTML = "";
+        uniqueValues.forEach(v => {
+            sg.add(new Option(v, v));
+            cg.add(new Option(v, v));
+        });
+        
+        // 自动识别 A/B
+        if(uniqueValues.length >= 2) {
+            sg.selectedIndex = uniqueValues.findIndex(v => v.toUpperCase().includes('A')) !== -1 ? uniqueValues.findIndex(v => v.toUpperCase().includes('A')) : 0;
+            cg.selectedIndex = uniqueValues.findIndex(v => v.toUpperCase().includes('B')) !== -1 ? uniqueValues.findIndex(v => v.toUpperCase().includes('B')) : 1;
+        }
+    }
+
+    // 2. 统计计算引擎
+    document.getElementById('runBtn').onclick = function() {
+        const dCol = document.getElementById('dateCol').value, gCol = document.getElementById('groupCol').value;
+        const denCol = document.getElementById('denomCol').value, nCol = document.getElementById('numCol').value;
+        const sVal = document.getElementById('sGroup').value, cVal = document.getElementById('cGroup').value;
+
+        addLog(`开始分析: ${sVal} vs ${cVal}`);
+        
+        let stats = { A: { sumD: 0, sumN: 0, daily: {} }, B: { sumD: 0, sumN: 0, daily: {} } };
+        let dateSet = new Set();
+
+        state.rawData.forEach(row => {
+            const group = String(row[gCol] || "");
+            if (group !== sVal && group !== cVal) return;
+            
+            const key = (group === sVal) ? 'A' : 'B';
+            const date = String(row[dCol]);
+            dateSet.add(date);
+
+            stats[key].sumD += Number(row[denCol]) || 0;
+            stats[key].sumN += Number(row[nCol]) || 0;
+            if(!stats[key].daily[date]) stats[key].daily[date] = { d: 0, n: 0 };
+            stats[key].daily[date].d += Number(row[denCol]) || 0;
+            stats[key].daily[date].n += Number(row[nCol]) || 0;
+        });
+
+        const dates = Array.from(dateSet).sort();
+        const days = dates.length || 1;
+        
+        // Z-Test
+        const nA = stats.A.sumD, xA = stats.A.sumN, nB = stats.B.sumD, xB = stats.B.sumN;
+        const pPool = (xA + xB) / (nA + nB);
+        const se = Math.sqrt(pPool * (1-pPool) * (1/nA + 1/nB));
+        const pVal = 2 * (1 - jStat.normal.cdf(Math.abs((xA/nA - xB/nB) / se), 0, 1));
+
+        state.finalReport = {
+            sLabel: sVal, cLabel: cVal,
+            time: `${dates[0]} 至 ${dates[dates.length-1]} 日均`,
+            aD: nA/days, aN: xA/days, aCtr: xA/nA,
+            bD: nB/days, bN: xB/days, bCtr: xB/nB,
+            pVal: pVal, dates: dates, dStats: stats
+        };
+
+        renderUI();
+    };
+
+    function renderUI() {
+        document.getElementById('resultArea').classList.remove('hidden');
+        const r = state.finalReport;
+        const lift = (r.aCtr - r.bCtr) / r.bCtr;
+
+        document.getElementById('tableBody').innerHTML = `
+            <tr class="hover:bg-blue-50/30 border-b">
+                <td class="p-4 border font-black text-blue-700 italic">${r.sLabel} (策略)</td>
+                <td class="p-4 border text-slate-400 text-xs">${r.time}</td>
+                <td class="p-4 border text-right font-mono">${Math.round(r.aD).toLocaleString()}</td>
+                <td class="p-4 border text-right font-mono">${Math.round(r.aN).toLocaleString()}</td>
+                <td class="p-4 border text-right font-black text-blue-600">${(r.aCtr*100).toFixed(2)}%</td>
+            </tr>
+            <tr class="hover:bg-slate-50 border-b-4 border-slate-100">
+                <td class="p-4 border font-black text-slate-600 italic">${r.cLabel} (对照)</td>
+                <td class="p-4 border text-slate-400 text-xs">${r.time}</td>
+                <td class="p-4 border text-right font-mono">${Math.round(r.bD).toLocaleString()}</td>
+                <td class="p-4 border text-right font-mono">${Math.round(r.bN).toLocaleString()}</td>
+                <td class="p-4 border text-right font-black text-slate-700">${(r.bCtr*100).toFixed(2)}%</td>
+            </tr>
+            <tr class="bg-slate-50 font-black">
+                <td class="p-4 border text-center text-slate-400 tracking-widest text-[10px]" colspan="2 uppercase">DIFF VS CONTROL</td>
+                <td class="p-4 border text-right text-slate-500">${((r.aD-r.bD)/r.bD*100).toFixed(2)}%</td>
+                <td class="p-4 border text-right text-slate-500">${((r.aN-r.bN)/r.bN*100).toFixed(2)}%</td>
+                <td class="p-4 border text-right text-red-600 text-lg">${(lift*100).toFixed(2)}%</td>
+            </tr>
+        `;
+
+        const isSig = r.pVal < 0.05;
+        document.getElementById('verdictArea').innerHTML = `
+            <div class="flex flex-col md:flex-row gap-6 items-center">
+                <div class="flex-1">
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="text-[9px] font-black bg-slate-100 px-2 py-0.5 rounded text-slate-500 uppercase tracking-tighter">Diagnostic P-Value</span>
+                        <span class="text-[9px] font-black ${isSig?'bg-emerald-100 text-emerald-600':'bg-slate-100 text-slate-400'} px-2 py-0.5 rounded tracking-tighter">${r.pVal.toFixed(4)}</span>
+                    </div>
+                    <h3 class="text-2xl font-black ${isSig?'text-emerald-800':'text-slate-500'} tracking-tight">
+                        ${isSig ? (lift>0?'🚀 策略正向极其显著':'📉 策略导致负向显著') : '⚖️ 实验结果不具有显著性'}
+                    </h3>
+                    <p class="text-sm text-slate-400 italic mt-2">
+                        ${isSig ? '检测到显著差异，意味着此 CTR 提升 95% 概率不是由于随机运气导致的，建议推全。' : '目前差异尚处于随机波动范围内，结论不可靠，建议继续观察或优化。'}
+                    </p>
+                </div>
+                <div class="border-l-4 ${isSig?'border-emerald-500 bg-emerald-50':'border-slate-200 bg-slate-50'} p-6 rounded-r-xl min-w-[180px] text-center">
+                    <p class="text-[10px] font-black text-slate-400 uppercase mb-1">Final Recommendation</p>
+                    <p class="text-xl font-black ${isSig?'text-emerald-600':'text-slate-400'}">${isSig?'PASSED':'OBSERVE'}</p>
+                </div>
+            </div>
+        `;
+
+        renderChart(r);
+        addLog("报告生成完毕！");
+    }
+
+    function renderChart(r) {
+        if(state.chart) state.chart.destroy();
+        const ctx = document.getElementById('trendChart').getContext('2d');
+        state.chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: r.dates.map(d => String(d).split('-').slice(1).join('/')),
+                datasets: [
+                    { label: '策略组 (A)', data: r.dates.map(d => (r.dStats.A.daily[d].n/r.dStats.A.daily[d].d*100).toFixed(2)), borderColor: '#2563eb', backgroundColor: 'rgba(37, 99, 235, 0.05)', fill: true, tension: 0.3, borderWidth: 3 },
+                    { label: '对照组 (B)', data: r.dates.map(d => (r.dStats.B.daily[d].n/r.dStats.B.daily[d].d*100).toFixed(2)), borderColor: '#94a3b8', borderDash: [5, 5], tension: 0.3, borderWidth: 2 }
+                ]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } } }
+        });
+    }
+
+    // 3. 终极导出引擎 (AoA 模式确保对齐)
+    document.getElementById('exportBtn').onclick = function() {
+        if (!state.finalReport) return;
+        const r = state.finalReport;
+        
+        const aoa = [
+            ["人群", "行为时间", "曝光人数(日均)", "点击人数(日均)", "CTR"],
+            [`${r.sLabel} (策略)`, r.time, Math.round(r.aD), Math.round(r.aN), (r.aCtr*100).toFixed(2) + "%"],
+            [`${r.cLabel} (对照)`, r.time, Math.round(r.bD), Math.round(r.bN), (r.bCtr*100).toFixed(2) + "%"],
+            ["对比 (%)", "", ((r.aD-r.bD)/r.bD*100).toFixed(2) + "%", ((r.aN-r.bN)/r.bN*100).toFixed(2) + "%", ((r.aCtr-r.bCtr)/r.bCtr*100).toFixed(2) + "%"],
+            ["p值", "", "", "", r.pVal.toFixed(4) + (r.pVal < 0.05 ? " ★显著" : " 不显著")]
+        ];
+
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "AB测试复盘报告");
+        
+        // 自动调节列宽
+        ws['!cols'] = [{wch:25}, {wch:30}, {wch:15}, {wch:15}, {wch:15}];
+        
+        XLSX.writeFile(wb, `OTT_AB复盘报告_${new Date().toLocaleDateString()}.xlsx`);
+        addLog("Excel 导出完成！");
+    };
+</script>
+</body>
 </html>
