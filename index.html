@@ -2,362 +2,309 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>OTT AB实验智慧分析系统 v4.0 (终极稳定版)</title>
-    <!-- 强制使用稳定的脚本源 -->
+    <title>OTT AB实验智慧分析系统 v4.1</title>
+    <!-- 记得V张昭颖50 -->
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jstat@latest/dist/jstat.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        .card { background: white; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); border: 1px solid #edf2f7; }
-        .log-item { border-bottom: 1px solid #334155; padding: 2px 0; }
+        body { background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        .glass-card { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); border: 1px solid #e2e8f0; border-radius: 16px; }
+        .gradient-btn { background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); transition: all 0.2s; }
+        .gradient-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3); }
     </style>
 </head>
-<body class="bg-slate-50 min-h-screen p-4 md:p-8 text-slate-800 font-sans">
+<body class="p-4 md:p-8">
 
 <div class="max-w-6xl mx-auto">
     <!-- Header -->
     <header class="flex justify-between items-end mb-8">
         <div>
-            <h1 class="text-3xl font-black text-slate-900 tracking-tighter">OTT AB分析看板 <span class="text-blue-600 italic">v4.0</span></h1>
-            <p class="text-slate-400 font-medium text-sm mt-1 uppercase tracking-widest">记得V张昭颖50</p>
+            <h1 class="text-3xl font-black text-slate-900 tracking-tight">OTT AB 实验分析系统 <span class="text-blue-600">v4.1</span></h1>
+            <p class="text-slate-500 text-sm mt-1 uppercase font-bold tracking-widest italic">记得V张昭颖50</p>
         </div>
-        <div class="hidden md:block bg-blue-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg">
-            统计逻辑：双样本比例 Z 检验
+        <div class="hidden md:block bg-slate-800 text-white px-4 py-2 rounded-xl text-xs font-bold">
+            算法标准：双样本比例 Z 检验 (95% 置信度)
         </div>
     </header>
 
-    <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        <!-- 操作区 -->
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
+        <!-- 左侧：控制台 -->
         <aside class="lg:col-span-1 space-y-6">
-            <div class="card p-6">
-                <h2 class="text-xs font-black text-slate-400 mb-4 uppercase">1. 数据源导入</h2>
+            <div class="glass-card p-6 shadow-sm">
+                <h2 class="text-xs font-black text-slate-400 mb-4 uppercase">1. 数据导入</h2>
                 <input type="file" id="fileInput" class="hidden" accept=".xlsx,.xls,.csv" />
-                <button onclick="document.getElementById('fileInput').click()" class="w-full border-2 border-dashed border-slate-200 rounded-xl py-10 text-slate-400 hover:border-blue-400 hover:bg-blue-50 transition-all flex flex-col items-center group">
-                    <svg class="w-8 h-8 mb-2 group-hover:text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
-                    <span class="text-xs font-bold">点击上传原始报表</span>
+                <button onclick="document.getElementById('fileInput').click()" class="w-full border-2 border-dashed border-slate-300 rounded-2xl py-8 text-slate-400 hover:border-blue-500 hover:bg-blue-50 transition-all flex flex-col items-center">
+                    <svg class="w-8 h-8 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"></path></svg>
+                    <span class="text-xs font-bold">点击上传 Excel / CSV</span>
                 </button>
                 
-                <!-- 实时日志系统 -->
-                <div class="mt-4 bg-slate-800 rounded-lg p-3 text-[10px] text-emerald-400 font-mono h-32 overflow-y-auto" id="sysLog">
-                    <div>> 系统待命...</div>
+                <!-- 清洗日志区 -->
+                <div id="cleanLog" class="mt-4 bg-slate-900 rounded-lg p-3 text-[10px] text-emerald-400 font-mono h-24 overflow-y-auto hidden">
+                    <div>> 待命...</div>
                 </div>
             </div>
 
-            <div id="setupCard" class="card p-6 hidden animate-in slide-in-from-left duration-300">
-                <h2 class="text-xs font-black text-slate-400 mb-4 uppercase">2. 维度匹配</h2>
+            <!-- 维度配置区 -->
+            <div id="configArea" class="glass-card p-6 shadow-sm hidden animate-in slide-in-from-left duration-300">
+                <h2 class="text-xs font-black text-slate-400 mb-4 uppercase">2. 实验配置</h2>
                 <div class="space-y-4">
-                    <div><label class="text-[10px] font-bold text-slate-500 block mb-1">日期字段</label><select id="dateCol" class="w-full border rounded p-2 text-xs font-bold"></select></div>
-                    <div><label class="text-[10px] font-bold text-slate-500 block mb-1">细分人群字段</label><select id="groupCol" class="w-full border rounded p-2 text-xs font-bold"></select></div>
-                    <div><label class="text-[10px] font-bold text-slate-500 block mb-1">分母 (曝光/UV)</label><select id="denomCol" class="w-full border rounded p-2 text-xs font-bold"></select></div>
-                    <div><label class="text-[10px] font-bold text-slate-500 block mb-1">分子 (点击/转化)</label><select id="numCol" class="w-full border rounded p-2 text-xs font-bold"></select></div>
+                    <div><label class="text-[10px] font-bold text-slate-500 block mb-1">日期列</label><select id="dateCol" class="w-full border rounded p-2 text-xs font-bold"></select></div>
+                    <div><label class="text-[10px] font-bold text-slate-500 block mb-1">细分筛选列</label><select id="groupCol" class="w-full border rounded p-2 text-xs font-bold"></select></div>
+                    <div><label class="text-[10px] font-bold text-slate-500 block mb-1">分母(曝光)</label><select id="denomCol" class="w-full border rounded p-2 text-xs font-bold"></select></div>
+                    <div><label class="text-[10px] font-bold text-slate-500 block mb-1">分子(点击)</label><select id="numCol" class="w-full border rounded p-2 text-xs font-bold"></select></div>
                     
-                    <div class="bg-slate-50 p-3 rounded-lg border border-slate-100 mt-4">
-                        <label class="text-[10px] font-black text-blue-600 block mb-2 uppercase">角色分配</label>
-                        <div class="space-y-2">
-                            <div class="flex items-center justify-between text-[10px] font-bold text-slate-400"><span>策略组 (A)</span></div>
-                            <select id="sGroup" class="w-full border-blue-200 rounded p-1.5 text-xs font-bold text-blue-700"></select>
-                            <div class="flex items-center justify-between text-[10px] font-bold text-slate-400"><span>对照组 (B)</span></div>
-                            <select id="cGroup" class="w-full border-slate-200 rounded p-1.5 text-xs font-bold text-slate-600"></select>
+                    <div class="p-3 bg-blue-50 rounded-xl border border-blue-100 mt-4">
+                        <label class="text-[10px] font-black text-blue-600 block mb-2 uppercase tracking-tighter">指定角色</label>
+                        <div class="space-y-3">
+                            <div><span class="text-[9px] text-slate-400">哪个是 策略组 (A)？</span><select id="sGroup" class="w-full border-blue-200 rounded p-1.5 text-xs font-bold text-blue-700"></select></div>
+                            <div><span class="text-[9px] text-slate-400">哪个是 对照组 (B)？</span><select id="cGroup" class="w-full border-slate-200 rounded p-1.5 text-xs font-bold text-slate-600"></select></div>
                         </div>
                     </div>
-                    <button id="runBtn" class="w-full bg-slate-900 text-white font-bold py-3 rounded-xl hover:bg-black transition-all shadow-xl">开始科学分析</button>
+                    <button id="runBtn" class="w-full gradient-btn text-white font-bold py-3 rounded-xl shadow-lg">开始自动化分析</button>
                 </div>
             </div>
         </aside>
 
-        <!-- 展示区 -->
+        <!-- 右侧：报告区 -->
         <main class="lg:col-span-3 space-y-6">
             <div id="resultArea" class="hidden">
-                <!-- 趋势图表 -->
-                <div class="card p-6 mb-6">
-                    <h2 class="text-lg font-bold mb-4 flex items-center gap-2">
-                        <span class="w-2 h-2 bg-blue-500 rounded-full"></span> 每日转化率趋势走势
-                    </h2>
-                    <div class="h-[280px]"><canvas id="trendChart"></canvas></div>
+                <!-- 趋势图 -->
+                <div class="glass-card p-6 mb-6">
+                    <h2 class="text-lg font-bold mb-4 flex items-center gap-2">转化率趋势走势</h2>
+                    <div class="h-[260px]"><canvas id="trendChart"></canvas></div>
                 </div>
 
-                <!-- 汇总表 -->
-                <div class="card overflow-hidden">
+                <!-- 汇总报表 -->
+                <div class="glass-card overflow-hidden">
                     <div class="p-6 flex justify-between items-center bg-slate-50 border-b">
-                        <h2 class="text-lg font-black italic">AB 实验复盘汇总报告</h2>
-                        <button id="exportBtn" class="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg transition-all">
+                        <h2 class="text-lg font-black italic text-slate-700">AB 实验分析最终复盘结论</h2>
+                        <button id="exportBtn" class="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1M16 9l-4-4m0 0L8 9m4-4v12"></path></svg>
-                            一键导出 Excel
+                            导出 Excel 报表
                         </button>
                     </div>
-                    <div class="overflow-x-auto text-sm">
-                        <table class="w-full text-left border-collapse" id="viewTable">
-                            <thead class="bg-slate-800 text-white font-bold text-[10px] uppercase tracking-widest">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse" id="reportTable">
+                            <thead class="bg-slate-800 text-white text-[10px] font-bold uppercase tracking-widest">
                                 <tr>
-                                    <th class="p-4 border border-slate-700">人群</th>
-                                    <th class="p-4 border border-slate-700">行为时间</th>
-                                    <th class="p-4 border border-slate-700 text-right">曝光人数(日均)</th>
-                                    <th class="p-4 border border-slate-700 text-right">点击人数(日均)</th>
+                                    <th class="p-4 border border-slate-700">分组人群</th>
+                                    <th class="p-4 border border-slate-700">周期时间</th>
+                                    <th class="p-4 border border-slate-700 text-right">曝光人数 (日均)</th>
+                                    <th class="p-4 border border-slate-700 text-right">点击人数 (日均)</th>
                                     <th class="p-4 border border-slate-700 text-right">CTR</th>
                                 </tr>
                             </thead>
-                            <tbody id="tableBody"></tbody>
+                            <tbody id="tableBody" class="text-sm font-medium"></tbody>
                         </table>
                     </div>
-                    <!-- 智能结论 -->
                     <div id="verdictArea" class="p-8 border-t bg-white"></div>
-                </div>
-
-                <!-- 小白百科 -->
-                <div class="mt-6 p-4 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-800 leading-relaxed">
-                    <b>💡 统计学笔记：</b> 本系统采用 <span class="font-bold underline italic">双样本比例 Z 检验</span>。 
-                    如果 <b>P 值 < 0.05</b>，说明差异极大概率是真实的策略提升；如果 <b>P 值 >= 0.05</b>，说明两组差异可能纯属随机波动。
                 </div>
             </div>
             
-            <!-- 欢迎界面 -->
-            <div id="welcome" class="flex flex-col items-center justify-center py-32 text-slate-300">
-                <div class="bg-slate-100 p-6 rounded-full mb-4 animate-bounce">
-                    <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                </div>
-                <p class="font-bold tracking-widest uppercase text-xs">Waiting for your Excel file...</p>
+            <!-- 初始状态 -->
+            <div id="empty" class="flex flex-col items-center justify-center py-32 text-slate-300">
+                <div class="bg-slate-100 p-8 rounded-full mb-4"><svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg></div>
+                <p class="font-bold tracking-widest text-xs uppercase">等待上传原始数据报表...</p>
             </div>
         </main>
     </div>
 </div>
 
 <script>
-    // 系统状态管理
-    const state = {
-        rawData: [],
-        headers: [],
-        finalReport: null,
-        chart: null
-    };
+    let state = { raw: [], headers: [], report: null, chart: null };
 
-    function addLog(msg) {
-        const logBox = document.getElementById('sysLog');
-        const div = document.createElement('div');
-        div.className = 'log-item';
-        div.innerText = `> ${msg}`;
-        logBox.appendChild(div);
-        logBox.scrollTop = logBox.scrollHeight;
+    function log(msg) {
+        const lb = document.getElementById('cleanLog');
+        lb.classList.remove('hidden');
+        const d = document.createElement('div');
+        d.innerText = `> ${msg}`;
+        lb.appendChild(d);
+        lb.scrollTop = lb.scrollHeight;
     }
 
-    // 1. 深度文件解析引擎
-    document.getElementById('fileInput').addEventListener('change', function(e) {
+    // 1. 鲁棒的数据导入解析
+    document.getElementById('fileInput').onchange = function(e) {
         const file = e.target.files[0];
-        if (!file) return;
+        if(!file) return;
         
-        addLog(`读取文件: ${file.name}`);
+        log(`开始解析: ${file.name}`);
         const reader = new FileReader();
         reader.onload = function(evt) {
             try {
-                const data = new Uint8Array(evt.target.result);
-                const workbook = XLSX.read(data, { type: 'array' });
-                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const workbook = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
+                const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
                 
-                // 深度扫描寻找真实的表头行
-                const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: null });
-                let headerRowIdx = -1;
-                for(let i=0; i<Math.min(rows.length, 20); i++) {
-                    if(rows[i].some(cell => cell !== null && cell !== "")) {
-                        headerRowIdx = i;
-                        break;
-                    }
-                }
-
-                if (headerRowIdx === -1) throw "找不到有效表头，请确认 Excel 内容";
+                // 自动跳过空行寻找表头
+                let headIdx = rows.findIndex(r => r.some(c => c !== null));
+                if(headIdx === -1) throw "文件似乎是空的";
                 
-                state.headers = rows[headerRowIdx].filter(h => h !== null && h !== "");
-                state.rawData = XLSX.utils.sheet_to_json(firstSheet, { range: headerRowIdx, defval: 0 });
+                state.headers = rows[headIdx].filter(h => h);
+                state.raw = XLSX.utils.sheet_to_json(sheet, { range: headIdx, defval: 0 });
                 
-                addLog(`解析成功! 发现 ${state.rawData.length} 行数据`);
-                addLog(`识别字段: ${state.headers.slice(0, 3).join(', ')}...`);
-                
-                initSetupUI();
-            } catch (err) {
-                addLog(`ERROR: ${err}`);
-                alert("读取失败: " + err);
+                log(`成功识别 ${state.raw.length} 行数据`);
+                initUI();
+            } catch(err) {
+                log(`错误: ${err}`);
+                alert("解析失败，请检查文件格式");
             }
         };
         reader.readAsArrayBuffer(file);
-    });
+    };
 
-    function initSetupUI() {
-        const ids = ['dateCol', 'groupCol', 'denomCol', 'numCol'];
-        ids.forEach(id => {
+    function initUI() {
+        ['dateCol', 'groupCol', 'denomCol', 'numCol'].forEach(id => {
             const sel = document.getElementById(id);
             sel.innerHTML = "";
             state.headers.forEach(h => sel.add(new Option(h, h)));
         });
 
-        // 智能模糊匹配默认字段
+        // 模糊匹配
         document.getElementById('dateCol').value = state.headers.find(h => h.includes('日期')) || state.headers[0];
-        document.getElementById('groupCol').value = state.headers.find(h => h.includes('细分') || h.includes('人群')) || state.headers[0];
-        document.getElementById('denomCol').value = state.headers.find(h => h.includes('曝光') || h.includes('UV')) || state.headers[0];
-        document.getElementById('numCol').value = state.headers.find(h => h.includes('点击') || h.includes('支付')) || state.headers[0];
+        document.getElementById('groupCol').value = state.headers.find(h => h.includes('细分') || h.includes('筛选') || h.includes('人群')) || state.headers[0];
+        document.getElementById('denomCol').value = state.headers.find(h => h.includes('曝光') || h.includes('uv')) || state.headers[0];
+        document.getElementById('numCol').value = state.headers.find(h => h.includes('点击') || h.includes('转化')) || state.headers[0];
 
-        updateRoleSelections();
-        document.getElementById('groupCol').onchange = updateRoleSelections;
-        
-        document.getElementById('welcome').classList.add('hidden');
-        document.getElementById('setupCard').classList.remove('hidden');
-        addLog("维度识别就绪，等待角色分配...");
+        updateGroups();
+        document.getElementById('groupCol').onchange = updateGroups;
+        document.getElementById('empty').classList.add('hidden');
+        document.getElementById('configArea').classList.remove('hidden');
     }
 
-    function updateRoleSelections() {
-        const groupKey = document.getElementById('groupCol').value;
-        const uniqueValues = [...new Set(state.rawData.map(r => String(r[groupKey] || "")))].filter(v => v && !v.includes('合计'));
-        
+    function updateGroups() {
+        const gk = document.getElementById('groupCol').value;
+        const groups = [...new Set(state.raw.map(r => String(r[gk] || "")))].filter(g => g && !g.includes('合计'));
         const sg = document.getElementById('sGroup'), cg = document.getElementById('cGroup');
         sg.innerHTML = cg.innerHTML = "";
-        uniqueValues.forEach(v => {
-            sg.add(new Option(v, v));
-            cg.add(new Option(v, v));
-        });
-        
-        // 自动识别 A/B
-        if(uniqueValues.length >= 2) {
-            sg.selectedIndex = uniqueValues.findIndex(v => v.toUpperCase().includes('A')) !== -1 ? uniqueValues.findIndex(v => v.toUpperCase().includes('A')) : 0;
-            cg.selectedIndex = uniqueValues.findIndex(v => v.toUpperCase().includes('B')) !== -1 ? uniqueValues.findIndex(v => v.toUpperCase().includes('B')) : 1;
+        groups.forEach(g => { sg.add(new Option(g, g)); cg.add(new Option(g, g)); });
+        if(groups.length >= 2) {
+            sg.selectedIndex = groups.findIndex(g => g.toUpperCase().includes('A')) !== -1 ? groups.findIndex(g => g.toUpperCase().includes('A')) : 0;
+            cg.selectedIndex = groups.findIndex(g => g.toUpperCase().includes('B')) !== -1 ? groups.findIndex(g => g.toUpperCase().includes('B')) : 1;
         }
     }
 
-    // 2. 统计计算引擎
+    // 2. 统计计算逻辑
     document.getElementById('runBtn').onclick = function() {
-        const dCol = document.getElementById('dateCol').value, gCol = document.getElementById('groupCol').value;
-        const denCol = document.getElementById('denomCol').value, nCol = document.getElementById('numCol').value;
-        const sVal = document.getElementById('sGroup').value, cVal = document.getElementById('cGroup').value;
+        const dc = document.getElementById('dateCol').value, gc = document.getElementById('groupCol').value;
+        const dnc = document.getElementById('denomCol').value, nnc = document.getElementById('numCol').value;
+        const sv = document.getElementById('sGroup').value, cv = document.getElementById('cGroup').value;
 
-        addLog(`开始分析: ${sVal} vs ${cVal}`);
-        
-        let stats = { A: { sumD: 0, sumN: 0, daily: {} }, B: { sumD: 0, sumN: 0, daily: {} } };
-        let dateSet = new Set();
+        let stats = { A: { d: 0, n: 0, day: {} }, B: { d: 0, n: 0, day: {} } };
+        let dates = new Set();
+        let skipped = 0;
 
-        state.rawData.forEach(row => {
-            const group = String(row[gCol] || "");
-            if (group !== sVal && group !== cVal) return;
+        state.raw.forEach(r => {
+            const g = String(r[gc] || "");
+            if(g !== sv && g !== cv) { skipped++; return; }
             
-            const key = (group === sVal) ? 'A' : 'B';
-            const date = String(row[dCol]);
-            dateSet.add(date);
+            const k = (g === sv) ? 'A' : 'B';
+            const date = String(r[dc]);
+            dates.add(date);
 
-            stats[key].sumD += Number(row[denCol]) || 0;
-            stats[key].sumN += Number(row[nCol]) || 0;
-            if(!stats[key].daily[date]) stats[key].daily[date] = { d: 0, n: 0 };
-            stats[key].daily[date].d += Number(row[denCol]) || 0;
-            stats[key].daily[date].n += Number(row[nCol]) || 0;
+            stats[k].d += Number(r[dnc]) || 0;
+            stats[k].n += Number(r[nnc]) || 0;
+            if(!stats[k].day[date]) stats[k].day[date] = { d: 0, n: 0 };
+            stats[k].day[date].d += Number(r[dnc]) || 0;
+            stats[k].day[date].n += Number(r[nnc]) || 0;
         });
 
-        const dates = Array.from(dateSet).sort();
-        const days = dates.length || 1;
+        const sortedDates = Array.from(dates).sort();
+        const days = sortedDates.length || 1;
         
-        // Z-Test
-        const nA = stats.A.sumD, xA = stats.A.sumN, nB = stats.B.sumD, xB = stats.B.sumN;
+        // Z-Test 计算
+        const nA = stats.A.d, xA = stats.A.n, nB = stats.B.d, xB = stats.B.n;
         const pPool = (xA + xB) / (nA + nB);
         const se = Math.sqrt(pPool * (1-pPool) * (1/nA + 1/nB));
         const pVal = 2 * (1 - jStat.normal.cdf(Math.abs((xA/nA - xB/nB) / se), 0, 1));
 
-        state.finalReport = {
-            sLabel: sVal, cLabel: cVal,
-            time: `${dates[0]} 至 ${dates[dates.length-1]} 日均`,
-            aD: nA/days, aN: xA/days, aCtr: xA/nA,
-            bD: nB/days, bN: xB/days, bCtr: xB/nB,
-            pVal: pVal, dates: dates, dStats: stats
+        state.report = {
+            sLabel: sv, cLabel: cv, p: pVal, days: sortedDates,
+            time: `${sortedDates[0]} 至 ${sortedDates[days-1]} 日均`,
+            a: { d: nA/days, n: xA/days, ctr: xA/nA },
+            b: { d: nB/days, n: xB/days, ctr: xB/nB },
+            rawStats: stats
         };
 
-        renderUI();
+        log(`分析完毕，已清洗无效数据 ${skipped} 行`);
+        render();
     };
 
-    function renderUI() {
+    function render() {
         document.getElementById('resultArea').classList.remove('hidden');
-        const r = state.finalReport;
-        const lift = (r.aCtr - r.bCtr) / r.bCtr;
+        const r = state.report;
+        const lift = (r.a.ctr - r.b.ctr) / r.b.ctr;
 
         document.getElementById('tableBody').innerHTML = `
-            <tr class="hover:bg-blue-50/30 border-b">
-                <td class="p-4 border font-black text-blue-700 italic">${r.sLabel} (策略)</td>
+            <tr class="hover:bg-blue-50/50 border-b">
+                <td class="p-4 border font-bold text-blue-700 italic">${r.sLabel} (策略)</td>
                 <td class="p-4 border text-slate-400 text-xs">${r.time}</td>
-                <td class="p-4 border text-right font-mono">${Math.round(r.aD).toLocaleString()}</td>
-                <td class="p-4 border text-right font-mono">${Math.round(r.aN).toLocaleString()}</td>
-                <td class="p-4 border text-right font-black text-blue-600">${(r.aCtr*100).toFixed(2)}%</td>
+                <td class="p-4 border text-right font-mono text-slate-600">${Math.round(r.a.d).toLocaleString()}</td>
+                <td class="p-4 border text-right font-mono text-slate-600">${Math.round(r.a.n).toLocaleString()}</td>
+                <td class="p-4 border text-right font-black text-blue-600">${(r.a.ctr*100).toFixed(2)}%</td>
             </tr>
             <tr class="hover:bg-slate-50 border-b-4 border-slate-100">
-                <td class="p-4 border font-black text-slate-600 italic">${r.cLabel} (对照)</td>
+                <td class="p-4 border font-bold text-slate-700 italic">${r.cLabel} (对照)</td>
                 <td class="p-4 border text-slate-400 text-xs">${r.time}</td>
-                <td class="p-4 border text-right font-mono">${Math.round(r.bD).toLocaleString()}</td>
-                <td class="p-4 border text-right font-mono">${Math.round(r.bN).toLocaleString()}</td>
-                <td class="p-4 border text-right font-black text-slate-700">${(r.bCtr*100).toFixed(2)}%</td>
+                <td class="p-4 border text-right font-mono text-slate-600">${Math.round(r.b.d).toLocaleString()}</td>
+                <td class="p-4 border text-right font-mono text-slate-600">${Math.round(r.b.n).toLocaleString()}</td>
+                <td class="p-4 border text-right font-black text-slate-700">${(r.b.ctr*100).toFixed(2)}%</td>
             </tr>
-            <tr class="bg-slate-50 font-black">
-                <td class="p-4 border text-center text-slate-400 tracking-widest text-[10px]" colspan="2 uppercase">DIFF VS CONTROL</td>
-                <td class="p-4 border text-right text-slate-500">${((r.aD-r.bD)/r.bD*100).toFixed(2)}%</td>
-                <td class="p-4 border text-right text-slate-500">${((r.aN-r.bN)/r.bN*100).toFixed(2)}%</td>
+            <tr class="bg-slate-50 font-bold">
+                <td class="p-4 border text-center text-slate-400 text-[10px] uppercase tracking-tighter" colspan="2">差异对比 (%)</td>
+                <td class="p-4 border text-right text-slate-400">${((r.a.d-r.b.d)/r.b.d*100).toFixed(2)}%</td>
+                <td class="p-4 border text-right text-slate-400">${((r.a.n-r.b.n)/r.b.n*100).toFixed(2)}%</td>
                 <td class="p-4 border text-right text-red-600 text-lg">${(lift*100).toFixed(2)}%</td>
             </tr>
         `;
 
-        const isSig = r.pVal < 0.05;
+        const isSig = r.p < 0.05;
         document.getElementById('verdictArea').innerHTML = `
-            <div class="flex flex-col md:flex-row gap-6 items-center">
+            <div class="flex flex-col md:flex-row gap-8 items-center">
                 <div class="flex-1">
-                    <div class="flex items-center gap-2 mb-2">
-                        <span class="text-[9px] font-black bg-slate-100 px-2 py-0.5 rounded text-slate-500 uppercase tracking-tighter">Diagnostic P-Value</span>
-                        <span class="text-[9px] font-black ${isSig?'bg-emerald-100 text-emerald-600':'bg-slate-100 text-slate-400'} px-2 py-0.5 rounded tracking-tighter">${r.pVal.toFixed(4)}</span>
-                    </div>
-                    <h3 class="text-2xl font-black ${isSig?'text-emerald-800':'text-slate-500'} tracking-tight">
-                        ${isSig ? (lift>0?'🚀 策略正向极其显著':'📉 策略导致负向显著') : '⚖️ 实验结果不具有显著性'}
-                    </h3>
-                    <p class="text-sm text-slate-400 italic mt-2">
-                        ${isSig ? '检测到显著差异，意味着此 CTR 提升 95% 概率不是由于随机运气导致的，建议推全。' : '目前差异尚处于随机波动范围内，结论不可靠，建议继续观察或优化。'}
-                    </p>
+                    <div class="flex items-center gap-2 mb-2"><span class="text-[9px] font-black bg-slate-100 px-2 py-0.5 rounded text-slate-400 uppercase tracking-tighter">Diagnostic P-Value: ${r.p.toFixed(4)}</span></div>
+                    <h3 class="text-2xl font-black ${isSig?'text-emerald-700':'text-slate-400'} tracking-tight">${isSig ? (lift>0?'🚀 实验结论：显著正向提升！':'📉 实验结论：显著负向影响') : '⚖️ 实验结论：差异不显著'}</h3>
+                    <p class="text-sm text-slate-400 mt-2 italic">${isSig ? '检测到显著差异，意味着此 CTR 波动不是由运气导致的，建议推全。' : '目前差异尚处于随机波动范围内，无法证明策略有效，建议观察。'}</p>
                 </div>
-                <div class="border-l-4 ${isSig?'border-emerald-500 bg-emerald-50':'border-slate-200 bg-slate-50'} p-6 rounded-r-xl min-w-[180px] text-center">
-                    <p class="text-[10px] font-black text-slate-400 uppercase mb-1">Final Recommendation</p>
-                    <p class="text-xl font-black ${isSig?'text-emerald-600':'text-slate-400'}">${isSig?'PASSED':'OBSERVE'}</p>
+                <div class="${isSig?'bg-emerald-50 border-emerald-500':'bg-slate-50 border-slate-200'} border-l-4 p-6 min-w-[200px] text-center rounded-r-xl">
+                    <p class="text-[10px] font-black text-slate-400 uppercase mb-1">最终决策建议</p>
+                    <p class="text-xl font-black ${isSig?'text-emerald-600':'text-slate-400'} uppercase">${isSig?'Accepted':'Observe'}</p>
                 </div>
             </div>
         `;
 
-        renderChart(r);
-        addLog("报告生成完毕！");
-    }
-
-    function renderChart(r) {
         if(state.chart) state.chart.destroy();
-        const ctx = document.getElementById('trendChart').getContext('2d');
-        state.chart = new Chart(ctx, {
+        state.chart = new Chart(document.getElementById('trendChart'), {
             type: 'line',
             data: {
-                labels: r.dates.map(d => String(d).split('-').slice(1).join('/')),
+                labels: r.days.map(d => String(d).split('-').slice(1).join('/')),
                 datasets: [
-                    { label: '策略组 (A)', data: r.dates.map(d => (r.dStats.A.daily[d].n/r.dStats.A.daily[d].d*100).toFixed(2)), borderColor: '#2563eb', backgroundColor: 'rgba(37, 99, 235, 0.05)', fill: true, tension: 0.3, borderWidth: 3 },
-                    { label: '对照组 (B)', data: r.dates.map(d => (r.dStats.B.daily[d].n/r.dStats.B.daily[d].d*100).toFixed(2)), borderColor: '#94a3b8', borderDash: [5, 5], tension: 0.3, borderWidth: 2 }
+                    { label: '策略组 (A)', data: r.days.map(d => (r.rawStats.A.day[d].n/r.rawStats.A.day[d].d*100).toFixed(2)), borderColor: '#2563eb', tension: 0.3, borderWidth: 3 },
+                    { label: '对照组 (B)', data: r.days.map(d => (r.rawStats.B.day[d].n/r.rawStats.B.day[d].d*100).toFixed(2)), borderColor: '#94a3b8', borderDash: [5, 5], tension: 0.3, borderWidth: 2 }
                 ]
             },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } } }
+            options: { responsive: true, maintainAspectRatio: false }
         });
     }
 
-    // 3. 终极导出引擎 (AoA 模式确保对齐)
+    // 3. 终极导出引擎 (AoA 数组模式，避开合并单元格导致错位)
     document.getElementById('exportBtn').onclick = function() {
-        if (!state.finalReport) return;
-        const r = state.finalReport;
-        
+        if(!state.report) return;
+        const r = state.report;
         const aoa = [
-            ["人群", "行为时间", "曝光人数(日均)", "点击人数(日均)", "CTR"],
-            [`${r.sLabel} (策略)`, r.time, Math.round(r.aD), Math.round(r.aN), (r.aCtr*100).toFixed(2) + "%"],
-            [`${r.cLabel} (对照)`, r.time, Math.round(r.bD), Math.round(r.bN), (r.bCtr*100).toFixed(2) + "%"],
-            ["对比 (%)", "", ((r.aD-r.bD)/r.bD*100).toFixed(2) + "%", ((r.aN-r.bN)/r.bN*100).toFixed(2) + "%", ((r.aCtr-r.bCtr)/r.bCtr*100).toFixed(2) + "%"],
-            ["p值", "", "", "", r.pVal.toFixed(4) + (r.pVal < 0.05 ? " ★显著" : " 不显著")]
+            ["分组人群", "周期时间", "曝光人数(日均)", "点击人数(日均)", "CTR"],
+            [`${r.sLabel} (策略)`, r.time, Math.round(r.a.d), Math.round(r.a.n), (r.a.ctr*100).toFixed(2) + "%"],
+            [`${r.cLabel} (对照)`, r.time, Math.round(r.b.d), Math.round(r.b.n), (r.b.ctr*100).toFixed(2) + "%"],
+            ["差异对比 (%)", "", ((r.a.d-r.b.d)/r.b.d*100).toFixed(2) + "%", ((r.a.n-r.b.n)/r.b.n*100).toFixed(2) + "%", ((r.a.ctr-r.b.ctr)/r.b.ctr*100).toFixed(2) + "%"],
+            ["p值 (统计显著性)", "", "", "", r.p.toFixed(4) + (r.p < 0.05 ? " ★显著" : " 不显著")]
         ];
 
         const ws = XLSX.utils.aoa_to_sheet(aoa);
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "AB测试复盘报告");
-        
-        // 自动调节列宽
+        XLSX.utils.book_append_sheet(wb, ws, "AB实验分析复盘");
         ws['!cols'] = [{wch:25}, {wch:30}, {wch:15}, {wch:15}, {wch:15}];
-        
-        XLSX.writeFile(wb, `OTT_AB复盘报告_${new Date().toLocaleDateString()}.xlsx`);
-        addLog("Excel 导出完成！");
+        XLSX.writeFile(wb, `AB复盘报告_${new Date().toLocaleDateString()}.xlsx`);
     };
 </script>
 </body>
