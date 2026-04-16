@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <title>OTT AB 实验分析万能工具 - 网页版</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.57.0/build/stlite.css" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script src="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.57.0/build/stlite.js"></script>
+    <script>
+      stlite.mount(
+        {
+          requirements: ["pandas", "numpy", "plotly", "statsmodels", "scipy", "openpyxl"], // 自动加载所需的 Python 库
+          entrypoint: "app.py",
+          files: {
+            "app.py": `
+import streamlit as st
+import pandas as pd
+import numpy as np
+from statsmodels.stats.proportion import proportions_ztest
+import plotly.express as px
+import io
+import re
+
+# 页面配置
+st.set_page_config(page_title="OTT AB万能分析助手", layout="wide")
+
+st.title("📺 OTT 大屏 AB 实验万能分析工具 (纯网页版)")
+st.caption("基于 WebAssembly 技术，数据处理在本地浏览器完成，无需服务器，保障数据安全。")
+
+# --- 1. 核心工具函数 ---
+def find_col(columns, keywords):
+    for k in keywords:
+        for c in columns:
+            if k.lower() in str(c).lower():
+                return c
+    return None
+
+def normalize_data(df):
+    cols = df.columns.tolist()
+    date_pattern = r'\\d{4}-\\d{2}-\\d{2}'
+    found_date_cols = [c for c in cols if re.search(date_pattern, str(c))]
+    
+    if len(found_date_cols) > 2:
+        id_vars = [c for c in cols if c not in found_date_cols]
+        df_melted = df.melt(id_vars=id_vars, value_vars=found_date_cols, var_name='日期', value_name='数值')
+        desc_col = find_col(id_vars, ['指标', '筛选', '事件', '人群'])
+        
+        def parse_label(text):
+            text = str(text)
+            group = 'A组(策略)' if 'A' in text or '策略' in text else 'B组(对照)'
+            metric = '曝光' if '曝光' in text or 'show' in text else '点击'
+            return group, metric
+
+        df_melted[['组别', '指标类型']] = df_melted[desc_col].apply(lambda x: pd.Series(parse_label(x)))
+        df_norm = df_melted.pivot_table(index=['日期', '组别'], columns='指标类型', values='数值', aggfunc='sum').reset_index()
+        return df_norm, '曝光', '点击', '日期', '组别'
+    else:
+        df = df.ffill()
+        col_date = find_col(cols, ['日期', '时间', 'date'])
+        col_group_info = find_col(cols, ['人群', '组别', '筛选', 'Group'])
+        col_exp = find_col(cols, ['曝光', 'show', 'PV', 'UV'])
+        col_clk = find_col(cols, ['点击', 'click'])
+        df['组别'] = df[col_group_info].apply(lambda x: 'A组(策略)' if 'A' in str(x) or '策略' in str(x) else 'B组(对照)')
+        return df, col_exp, col_clk, col_date, '组别'
+
+# --- 2. 导入数据 ---
+uploaded_file = st.file_uploader("上传您的数据 (支持图1流水账或图2横向矩阵)", type=["xlsx", "csv"])
+
+if uploaded_file:
+    df_raw = pd.read_excel(uploaded_file) if uploaded_file.name.endswith('.xlsx') else pd.read_csv(uploaded_file)
+    df, c_exp, c_clk, c_date, c_grp = normalize_data(df_raw)
+    
+    exclude_kws = ["合计", "汇总", "总计"]
+    mask_sum = df.astype(str).apply(lambda x: x.str.contains('|'.join(exclude_kws))).any(axis=1)
+    df = df[~mask_sum].reset_index(drop=True)
+
+    def get_stats(data_sub):
+        d_a = data_sub[data_sub[c_grp].str.contains('A组')]
+        d_b = data_sub[data_sub[c_grp].str.contains('B组')]
+        n_a, c_a = d_a[c_exp].sum(), d_a[c_clk].sum()
+        n_b, c_b = d_b[c_exp].sum(), d_b[c_clk].sum()
+        r_a = c_a / n_a if n_a > 0 else 0
+        r_b = c_b / n_b if n_b > 0 else 0
+        lift = (r_a - r_b) / r_b if r_b > 0 else 0
+        p = 1.0
+        if n_a > 10 and n_b > 10:
+            try: _, p = proportions_ztest([c_a, c_b], [n_a, n_b])
+            except: pass
+        return n_a, c_a, r_a, n_b, c_b, r_b, lift, p
+
+    # 展示结果
+    res = get_stats(df)
+    st.write("---")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("策略组(A) 转化率", f"{res[2]:.2%}")
+    c2.metric("对照组(B) 转化率", f"{res[5]:.2%}")
+    c3.metric("整体提升度", f"{res[6]:+.2%}")
+    c4.metric("显著性P值", f"{res[7]:.4f}", delta="显著" if res[7]<0.05 else "不显著")
+
+    trend = []
+    for day, group in df.groupby(c_date):
+        _, _, ra, _, _, rb, _, _ = get_stats(group)
+        trend.append({"时间": str(day), "策略组(A)": ra, "对照组(B)": rb})
+    st.plotly_chart(px.line(pd.DataFrame(trend), x="时间", y=["策略组(A)", "对照组(B)"], markers=True, title="每日转化率趋势"), use_container_width=True)
+
+    # 导出日均汇总
+    st.write("---")
+    st.subheader("📋 汇报专用日均表")
+    days = df[c_date].nunique()
+    report_data = [
+        {"人群": "A人群（策略）", "时间描述": f"{days}天日均数据", "曝光": round(res[0]/days), "点击": round(res[1]/days), "CTR": f"{res[2]:.2%}"},
+        {"人群": "B人群（对照）", "时间描述": f"{days}天日均数据", "曝光": round(res[3]/days), "点击": round(res[4]/days), "CTR": f"{res[5]:.2%}"},
+        {"人群": "对比", "时间描述": "-", "曝光": f"{(res[0]-res[3])/res[3]:+.2%}" if res[3]>0 else "-", "点击": f"{(res[1]-res[4])/res[4]:+.2%}" if res[4]>0 else "-", "CTR": f"{res[6]:+.2%}"},
+        {"人群": "p值", "时间描述": "-", "曝光": "", "点击": "", "CTR": f"{res[7]:.4f}"}
+    ]
+    report_df = pd.DataFrame(report_data)
+    st.table(report_df)
+
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        report_df.to_excel(writer, index=False)
+    st.download_button("📥 导出汇报 Excel", output.getvalue(), "AB实验复盘汇报.xlsx")
+
+    # 底部说明
+    st.write("---")
+    with st.expander("📚 统计学原理说明"):
+        st.write("本工具采用双样本比例 Z 检验。P值代表差异由偶然引起的概率。P < 0.05 意味着提升是显著且真实的。")
+else:
+    st.info("👋 欢迎！请直接上传 Excel 文件开始分析。")
+`,
+          },
+        },
+        document.getElementById("root")
+      );
+    </script>
+  </body>
+</html>
