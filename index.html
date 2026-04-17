@@ -2,340 +2,353 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>OTT AB实验智慧复盘系统 v5.2</title>
+    <title>OTT AB实验智慧助手</title>
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jstat@latest/dist/jstat.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        .card { background: white; border-radius: 16px; box-shadow: 0 4px 20px -5px rgba(0,0,0,0.1); border: 1px solid #f1f5f9; }
-        .btn-grad { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); transition: all 0.2s; }
-        .btn-grad:hover { transform: translateY(-1px); box-shadow: 0 5px 15px rgba(37, 99, 235, 0.4); }
-        .metric-row { animation: slideIn 0.3s ease-out; }
-        @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        select { border: 1px solid #e2e8f0 !important; outline: none; }
+        .card { background: white; border-radius: 12px; box-shadow: 0 4px 15px -5px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; }
+        select, input { border: 1px solid #cbd5e1 !important; outline: none; }
         .log-box::-webkit-scrollbar { width: 4px; }
-        .log-box::-webkit-scrollbar-thumb { background: #475569; border-radius: 10px; }
+        .log-box::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 10px; }
+        /* 复刻标准大盘样式 */
+        .report-table th { background-color: #f8fafc; color: #475569; font-weight: 800; border: 1px solid #e2e8f0; }
+        .report-table td { border: 1px solid #e2e8f0; padding: 10px 14px; font-weight: 600; }
+        .row-strategy { background-color: #ffffff; }
+        .row-control { background-color: #fdfdfd; }
+        .row-diff { background-color: #f8fafc; }
+        .row-p { background-color: #ffffff; }
+        .text-up { color: #dc2626; } /* 红色代表提效，符合国内金融/互联网习惯 */
+        .text-down { color: #16a34a; }
+        .bg-sig-high { background-color: #f0fdf4; color: #166534; }
     </style>
 </head>
-<body class="bg-[#f8fafc] min-h-screen p-4 md:p-8 font-sans text-slate-800">
+<body class="bg-[#f4f7fa] min-h-screen p-4 md:p-8 font-sans text-slate-700">
 
-<div class="max-w-7xl mx-auto">
+<div class="max-w-[98%] mx-auto">
     <!-- Header -->
-    <header class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+    <header class="flex justify-between items-end mb-6">
         <div>
-            <h1 class="text-3xl font-black text-slate-900 tracking-tighter">OTT AB分析-多指标版 <span class="text-blue-600 italic">v5.2</span></h1>
-            <p class="text-slate-400 font-bold text-[10px] uppercase tracking-[0.2em]">记得V张昭颖50</p>
+            <h1 class="text-3xl font-black text-slate-900 tracking-tighter">OTT AB实验智慧助手 <span class="text-blue-600 italic">v5.5</span></h1>
+            <p class="text-slate-400 font-bold text-[10px] uppercase tracking-widest mt-1">记得V张昭颖50</p>
         </div>
-        <div class="flex gap-3">
-            <div id="fileStatus" class="hidden bg-emerald-50 text-emerald-600 px-4 py-2 rounded-xl text-xs font-black border border-emerald-100 italic">数据已就绪</div>
-            <button onclick="document.getElementById('fileInput').click()" class="bg-white border-2 border-slate-200 px-4 py-2 rounded-xl text-xs font-black hover:bg-slate-50 transition-all">上传数据</button>
+        <div class="flex gap-3 pb-1">
+            <button onclick="document.getElementById('fileInput').click()" class="bg-white border-2 border-slate-300 px-5 py-2 rounded-xl text-xs font-black hover:bg-slate-50 transition-all shadow-sm">导入原始数据</button>
             <input type="file" id="fileInput" class="hidden" accept=".xlsx,.xls,.csv" />
         </div>
     </header>
 
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        <!-- 左侧配置：全局定义 -->
-        <aside class="lg:col-span-4 space-y-6">
-            <div class="card p-6">
-                <h3 class="text-xs font-black text-slate-400 mb-4 uppercase tracking-widest flex justify-between">
-                    <span>1. 基础维度定义</span>
-                    <span id="rowCount" class="text-blue-500"></span>
-                </h3>
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <!-- 左侧配置 -->
+        <aside class="lg:col-span-3 space-y-6">
+            <div class="card p-5">
+                <h3 class="text-[10px] font-black text-slate-400 mb-4 uppercase tracking-widest border-b pb-2">1. 统计维度</h3>
                 <div class="space-y-4">
-                    <div><label class="text-[10px] font-black text-slate-500 block mb-1">时间轴列</label><select id="dateCol" class="w-full rounded-lg p-2 text-xs font-bold bg-slate-50"></select></div>
-                    
-                    <div class="grid grid-cols-2 gap-4">
-                        <div class="bg-blue-50 p-3 rounded-xl border border-blue-100">
-                            <label class="text-[9px] font-black text-blue-600 block mb-2 uppercase">策略组 (A)</label>
-                            <select id="aCol" class="w-full mb-1 text-[10px] p-1.5 rounded bg-white font-bold" onchange="refreshValues('a')"></select>
-                            <select id="aVal" class="w-full text-[10px] p-1 rounded bg-white border-blue-200 font-mono"></select>
-                        </div>
-                        <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                            <label class="text-[9px] font-black text-slate-500 block mb-2 uppercase">对照组 (B)</label>
-                            <select id="bCol" class="w-full mb-1 text-[10px] p-1.5 rounded bg-white font-bold" onchange="refreshValues('b')"></select>
-                            <select id="bVal" class="w-full text-[10px] p-1 rounded bg-white border-slate-300 font-mono"></select>
+                    <div><label class="text-[10px] font-bold block mb-1">时间轴列</label><select id="dateCol" class="w-full rounded p-2 text-xs font-bold bg-slate-50"></select></div>
+                    <div class="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
+                        <label class="text-[10px] font-black text-blue-600 block mb-3 uppercase italic">人群对比设定</label>
+                        <select id="groupCol" class="w-full mb-3 text-xs p-2 rounded bg-white font-bold border-blue-200" onchange="refreshGroupValues()"></select>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div><span class="text-[9px] font-bold text-slate-400 uppercase">策略 (A)</span><select id="aVal" class="w-full text-[10px] p-2 rounded font-mono bg-white"></select></div>
+                            <div><span class="text-[9px] font-bold text-slate-400 uppercase">对照 (B)</span><select id="bVal" class="w-full text-[10px] p-2 rounded font-mono bg-white"></select></div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- 核心：指标构建器 -->
-            <div id="metricSection" class="card p-6 hidden">
+            <div id="metricSection" class="card p-5 hidden">
                 <div class="flex justify-between items-center mb-4">
-                    <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest">2. 指标组合构建</h3>
-                    <button onclick="addMetricRow()" class="text-[10px] bg-blue-600 text-white px-2 py-1 rounded font-black hover:bg-blue-700">+ 添加指标</button>
+                    <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest">2. 指标大盘定义</h3>
+                    <button onclick="addMetricRow()" class="text-[9px] bg-slate-800 text-white px-2 py-1 rounded font-black">+ 增加环节</button>
                 </div>
-                
-                <div id="metricList" class="space-y-3 max-h-[400px] overflow-y-auto pr-2 log-box">
-                    <!-- 指标行将在此动态生成 -->
-                </div>
-
-                <button id="runBtn" class="w-full btn-grad text-white font-black py-4 rounded-xl shadow-xl uppercase tracking-widest text-xs mt-6">执行全指标自动化分析</button>
-            </div>
-            
-            <div id="sysLog" class="bg-slate-900 rounded-xl p-3 text-[9px] text-emerald-400 font-mono h-24 overflow-y-auto log-box">
-                <div>> 等待数据导入...</div>
+                <div id="metricList" class="space-y-2 max-h-[350px] overflow-y-auto log-box pr-1"></div>
+                <button id="runBtn" class="w-full bg-blue-600 text-white font-black py-4 rounded-xl shadow-lg uppercase text-xs mt-6 hover:bg-blue-700 transform active:scale-95 transition-all">执行深度复盘分析</button>
             </div>
         </aside>
 
-        <!-- 右侧：多指标分析报告 -->
-        <main class="lg:col-span-8 space-y-6">
-            <div id="emptyState" class="card flex flex-col items-center justify-center py-40 text-slate-300">
-                <svg class="w-16 h-16 mb-4 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
-                <p class="font-black tracking-widest text-xs uppercase">请完成左侧配置并执行分析</p>
-            </div>
-
+        <!-- 主报告区 -->
+        <main class="lg:col-span-9 space-y-6">
             <div id="resultArea" class="hidden space-y-6">
-                <!-- 指标汇总一览表 (Scorecard) -->
+                <!-- 核心大盘表格 -->
                 <div class="card overflow-hidden">
-                    <div class="p-6 border-b bg-slate-50 flex justify-between items-center">
-                        <h2 class="text-lg font-black italic">多指标实验汇总 (Scorecard)</h2>
-                        <button id="exportBtn" class="bg-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-black flex items-center gap-2">导出完整报表</button>
+                    <div class="p-5 border-b flex justify-between items-center bg-white">
+                        <h2 class="text-sm font-black italic flex items-center gap-2">
+                            <span class="w-2 h-2 bg-blue-500 rounded-full"></span>
+                            AB 实验业务指标大盘 (Scorecard)
+                        </h2>
+                        <button id="exportBtn" class="bg-emerald-600 text-white px-4 py-2 rounded-lg text-[10px] font-black shadow-md hover:bg-emerald-700">导出报表文件</button>
                     </div>
                     <div class="overflow-x-auto">
-                        <table class="w-full text-left border-collapse">
-                            <thead class="bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider">
-                                <tr>
-                                    <th class="px-6 py-4">分析指标</th>
-                                    <th class="px-6 py-4">策略组 (A)</th>
-                                    <th class="px-6 py-4">对照组 (B)</th>
-                                    <th class="px-6 py-4 text-center">提效 (Lift)</th>
-                                    <th class="px-6 py-4 text-right">显著性 (P-Value)</th>
-                                </tr>
-                            </thead>
-                            <tbody id="scorecardBody" class="text-xs font-bold"></tbody>
+                        <table class="w-full text-center report-table text-xs border-collapse">
+                            <thead id="tableHeader"></thead>
+                            <tbody id="tableBody"></tbody>
                         </table>
                     </div>
                 </div>
 
-                <!-- 趋势详情 (带切换) -->
+                <!-- 趋势分析 -->
                 <div class="card p-6">
-                    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-                        <h2 class="text-lg font-black italic flex items-center gap-2">
-                            <span class="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
-                            指标走势详情
-                        </h2>
-                        <select id="chartMetricSelector" class="bg-white border rounded-lg px-3 py-1.5 text-xs font-black text-blue-600" onchange="updateChart()"></select>
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-sm font-black italic">指标日走势图 (Trends)</h2>
+                        <select id="chartSelector" class="text-[10px] font-bold border rounded-lg px-3 py-1.5 text-blue-600 bg-blue-50" onchange="updateChart()"></select>
                     </div>
-                    <div class="h-[350px]"><canvas id="trendChart"></canvas></div>
+                    <div class="h-[280px]"><canvas id="trendChart"></canvas></div>
                 </div>
+
+                <!-- 方法论说明（权威化背书模块） -->
+                <div class="card bg-slate-900 text-slate-300 p-8 border-0">
+                    <div class="flex items-center gap-3 mb-6">
+                        <div class="p-2 bg-blue-500/20 rounded-lg">
+                            <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                        </div>
+                        <h3 class="text-white text-sm font-black tracking-widest uppercase">统计学复盘诊断及方法论说明 (Methodology)</h3>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-10">
+                        <!-- 第一列：核心逻辑 -->
+                        <div class="space-y-4">
+                            <div>
+                                <h4 class="text-blue-400 text-[11px] font-black uppercase mb-1 tracking-wider">01. 转化率计算逻辑 (为何不同于 Excel?)</h4>
+                                <p class="text-[11px] leading-relaxed">
+                                    本报表采用 <span class="text-white">加权汇总转化率 (Pooled Rate)</span> 计算，逻辑为：<code class="text-blue-300 font-mono">∑(统计周期内总分子) / ∑(统计周期内总分母)</code>。
+                                    <br><span class="text-slate-500">※ 传统 Excel 的 Average 函数通常是“均值的平均值”，未考虑每日流量波动权重。本系统算法能真实反映业务总效能，消除了小样本日期对结论的干扰。</span>
+                                </p>
+                            </div>
+                            <div>
+                                <h4 class="text-blue-400 text-[11px] font-black uppercase mb-1 tracking-wider">02. 显著性检验标准</h4>
+                                <p class="text-[11px] leading-relaxed">
+                                    使用 <span class="text-white">双样本比例 Z-检验 (Two-Sample Z-Test)</span> 进行假设检验。判定指标为 <span class="text-white">P 值 (P-Value)</span>。
+                                    通常当 <span class="text-emerald-400">P < 0.05</span> 时，判定为显著。
+                                </p>
+                            </div>
+                        </div>
+                        <!-- 第二列：诊断结论 -->
+                        <div class="space-y-4">
+                            <div>
+                                <h4 class="text-blue-400 text-[11px] font-black uppercase mb-1 tracking-wider">03. 结果可信度说明</h4>
+                                <p class="text-[11px] leading-relaxed">
+                                    <span class="text-white">显著(★)：</span> 表示提效是由策略调整引起的概率高达 95% 以上，非随机波动。
+                                    <br><span class="text-white">不显著(-)：</span> 表示当前差异可能源于样本量不足或随机波动，建议继续观测或优化策略方向。
+                                </p>
+                            </div>
+                            <div class="pt-2">
+                                <div class="border-l-2 border-blue-500 pl-4 py-1 italic text-[10px] text-slate-400">
+                                    "数据驱动决策的核心，在于区分业务的真实增长与随机的幸运波动。"
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="emptyState" class="card flex flex-col items-center justify-center py-40 text-slate-300">
+                <div class="animate-bounce mb-4 text-slate-200">
+                    <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1M16 10l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                </div>
+                <p class="font-black text-[10px] uppercase italic tracking-[0.4em]">请载入数据表开启分析流程</p>
             </div>
         </main>
     </div>
 </div>
 
 <script>
-    let state = { raw: [], headers: [], results: [], chart: null };
+    let state = { raw: [], headers: [], results: [], sortedDates: [], chart: null };
 
-    // 1. 初始化指标行
+    // 1. 动态生成指标行
     function addMetricRow(numName = "", denName = "") {
         const container = document.getElementById('metricList');
         const id = Date.now() + Math.random();
         const div = document.createElement('div');
-        div.className = "metric-row p-3 bg-white border border-slate-200 rounded-xl space-y-2 relative group shadow-sm";
-        div.id = `metric-${id}`;
-        
+        div.className = "p-3 bg-white border border-slate-200 rounded-xl relative group shadow-sm transition-all hover:border-blue-400";
+        div.id = `m-${id}`;
         div.innerHTML = `
-            <div class="flex items-center justify-between mb-1">
-                <input type="text" placeholder="指标名称(如:点击率)" class="name-input text-[10px] font-black text-slate-800 border-b border-dashed focus:border-blue-500 outline-none w-32" value="${numName ? numName+'率' : ''}">
-                <button onclick="document.getElementById('metric-${id}').remove()" class="text-slate-300 hover:text-red-500">
-                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path></svg>
-                </button>
+            <div class="flex items-center gap-2 mb-2">
+                <input type="text" placeholder="指标名" class="m-name flex-1 text-[10px] font-black p-1 bg-transparent border-b border-dashed outline-none" value="${numName?(numName+'率'):''}">
+                <button onclick="document.getElementById('m-${id}').remove()" class="text-slate-300 hover:text-red-500">×</button>
             </div>
             <div class="grid grid-cols-2 gap-2">
-                <div>
-                    <label class="text-[8px] text-slate-400 font-bold">分子 (Numerator)</label>
-                    <select class="num-sel w-full text-[10px] p-1 rounded bg-slate-50 border-0"></select>
-                </div>
-                <div>
-                    <label class="text-[8px] text-slate-400 font-bold">分母 (Denominator)</label>
-                    <select class="den-sel w-full text-[10px] p-1 rounded bg-slate-50 border-0"></select>
-                </div>
+                <div><span class="text-[7px] text-slate-400 font-bold block mb-1 uppercase">分子</span><select class="m-num w-full text-[9px] p-1.5 rounded bg-slate-50 border-0"></select></div>
+                <div><span class="text-[7px] text-slate-400 font-bold block mb-1 uppercase">分母</span><select class="m-den w-full text-[9px] p-1.5 rounded bg-slate-50 border-0"></select></div>
             </div>
         `;
         container.appendChild(div);
-        
-        // 填充下拉框
-        const nSel = div.querySelector('.num-sel'), dSel = div.querySelector('.den-sel');
-        state.headers.forEach(h => {
-            nSel.add(new Option(h, h));
-            dSel.add(new Option(h, h));
-        });
-        
-        if(numName) nSel.value = numName;
-        if(denName) dSel.value = denName;
+        const ns = div.querySelector('.m-num'), ds = div.querySelector('.m-den');
+        state.headers.forEach(h => { ns.add(new Option(h, h)); ds.add(new Option(h, h)); });
+        if(numName) ns.value = numName;
+        if(denName) ds.value = denName;
     }
 
-    function addLog(msg) {
-        const lb = document.getElementById('sysLog');
-        const d = document.createElement('div'); d.innerText = `> ${msg}`;
-        lb.appendChild(d); lb.scrollTop = lb.scrollHeight;
-    }
-
-    // 2. 文件加载逻辑
+    // 2. 数据读取与基础配置
     document.getElementById('fileInput').addEventListener('change', function(e) {
         const file = e.target.files[0];
         if (!file) return;
         const reader = new FileReader();
         reader.onload = function(evt) {
-            try {
-                const workbook = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
-                const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1, defval: null });
-                let hIdx = rows.findIndex(r => r.some(c => c !== null));
-                state.headers = rows[hIdx].filter(h => h);
-                state.raw = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { range: hIdx, defval: 0 })
-                            .filter(r => !JSON.stringify(r).includes("合计"));
-
-                document.getElementById('fileStatus').classList.remove('hidden');
-                document.getElementById('metricSection').classList.remove('hidden');
-                document.getElementById('rowCount').innerText = `${state.raw.length} Rows`;
-                
-                initBaseConfigs();
-                addLog(`解析成功! 请构建指标任务...`);
-            } catch (err) { addLog(`解析失败: ${err}`); }
+            const wb = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
+            const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: null });
+            const hIdx = rows.findIndex(r => r.some(c => c !== null));
+            state.headers = rows[hIdx].filter(h => h);
+            state.raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { range: hIdx, defval: 0 })
+                        .filter(r => !JSON.stringify(r).includes("合计"));
+            
+            initUI();
         };
         reader.readAsArrayBuffer(file);
     });
 
-    function initBaseConfigs() {
-        const baseIds = ['dateCol', 'aCol', 'bCol'];
-        baseIds.forEach(id => {
+    function initUI() {
+        ['dateCol', 'groupCol'].forEach(id => {
             const s = document.getElementById(id); s.innerHTML = "";
             state.headers.forEach(h => s.add(new Option(h, h)));
         });
-
-        // 智能初次推荐
         const find = (k) => state.headers.find(h => k.some(x => h.includes(x)));
-        document.getElementById('dateCol').value = find(['时间', '日期']) || state.headers[0];
-        
-        const aH = find(['A人群', 'A组']), bH = find(['B人群', 'B组']);
-        if(aH && bH) { document.getElementById('aCol').value = aH; document.getElementById('bCol').value = bH; }
-        
-        refreshValues('a'); refreshValues('b');
-        
-        // 自动添加第一个指标（尝试找点击和曝光）
+        document.getElementById('dateCol').value = find(['日期', '时间']) || state.headers[0];
+        document.getElementById('groupCol').value = find(['分组', '人群', '组别', '细分']) || state.headers[0];
+        refreshGroupValues();
         document.getElementById('metricList').innerHTML = "";
-        const defNum = find(['点击', '支付', '订单']), defDen = find(['曝光', '展示', 'UV', '点击']);
-        addMetricRow(defNum, defDen);
+        addMetricRow(find(['点击', '起播']), find(['曝光', 'UV']));
+        document.getElementById('metricSection').classList.remove('hidden');
     }
 
-    function refreshValues(type) {
-        const col = document.getElementById(type + 'Col').value;
+    function refreshGroupValues() {
+        const col = document.getElementById('groupCol').value;
         const vals = [...new Set(state.raw.map(r => String(r[col] || "")))].filter(v => v);
-        const sel = document.getElementById(type + 'Val'); sel.innerHTML = "";
-        vals.forEach(v => sel.add(new Option(v, v)));
-        if(vals.includes("1")) sel.value = "1";
+        const sA = document.getElementById('aVal'), sB = document.getElementById('bVal');
+        sA.innerHTML = sB.innerHTML = "";
+        vals.forEach(v => { sA.add(new Option(v, v)); sB.add(new Option(v, v)); });
+        if(vals.length > 1) sB.selectedIndex = 1;
     }
 
-    // 3. 执行全指标分析
+    // 3. 统计计算逻辑
     document.getElementById('runBtn').onclick = function() {
-        const rows = document.querySelectorAll('.metric-row');
-        if(rows.length === 0) return alert("至少需要一个分析指标");
-        
         const base = {
-            dateCol: document.getElementById('dateCol').value,
-            aCol: document.getElementById('aCol').value, aVal: document.getElementById('aVal').value,
-            bCol: document.getElementById('bCol').value, bVal: document.getElementById('bVal').value
+            date: document.getElementById('dateCol').value,
+            group: document.getElementById('groupCol').value,
+            aVal: document.getElementById('aVal').value,
+            bVal: document.getElementById('bVal').value
         };
 
-        state.results = [];
+        const metrics = Array.from(document.querySelectorAll('#metricList > div')).map(div => ({
+            name: div.querySelector('.m-name').value || "指标",
+            num: div.querySelector('.m-num').value,
+            den: div.querySelector('.m-den').value
+        }));
+
+        const rawCols = [...new Set(metrics.flatMap(m => [m.num, m.den]))];
         const dateSet = new Set();
+        let stats = { A: { counts: {}, daily: {} }, B: { counts: {}, daily: {} } };
+        rawCols.forEach(c => stats.A.counts[c] = stats.B.counts[c] = 0);
 
-        rows.forEach(row => {
-            const mName = row.querySelector('.name-input').value || "未命名指标";
-            const numCol = row.querySelector('.num-sel').value;
-            const denCol = row.querySelector('.den-sel').value;
-
-            let dataA = { totalNum: 0, totalDen: 0, daily: {} };
-            let dataB = { totalNum: 0, totalDen: 0, daily: {} };
-
-            state.raw.forEach(r => {
-                const date = String(r[base.dateCol]);
-                dateSet.add(date);
-                if(String(r[base.aCol]) === base.aVal) update(dataA, r, date, numCol, denCol);
-                if(String(r[base.bCol]) === base.bVal) update(dataB, r, date, numCol, denCol);
+        state.raw.forEach(r => {
+            const d = String(r[base.date]), g = String(r[base.group]);
+            if (g !== base.aVal && g !== base.bVal) return;
+            dateSet.add(d);
+            const key = (g === base.aVal) ? 'A' : 'B';
+            rawCols.forEach(c => {
+                const val = Number(r[c]) || 0;
+                stats[key].counts[c] += val;
+                if(!stats[key].daily[d]) stats[key].daily[d] = {};
+                stats[key].daily[d][c] = (stats[key].daily[d][c] || 0) + val;
             });
-
-            function update(obj, r, date, nc, dc) {
-                const n = Number(r[nc])||0, d = Number(r[dc])||0;
-                obj.totalNum += n; obj.totalDen += d;
-                if(!obj.daily[date]) obj.daily[date] = { n: 0, d: 0 };
-                obj.daily[date].n += n; obj.daily[date].d += d;
-            }
-
-            // 计算显著性
-            const cA = dataA.totalNum/dataA.totalDen, cB = dataB.totalNum/dataB.totalDen;
-            const pPool = (dataA.totalNum + dataB.totalNum) / (dataA.totalDen + dataB.totalDen);
-            const se = Math.sqrt(pPool * (1-pPool) * (1/dataA.totalDen + 1/dataB.totalDen));
-            const p = 2 * (1 - jStat.normal.cdf(Math.abs((cA - cB) / se), 0, 1));
-
-            state.results.push({ name: mName, a: dataA, b: dataB, ctrA: cA, ctrB: cB, p: p, lift: (cA-cB)/cB });
         });
 
         state.sortedDates = Array.from(dateSet).sort();
+        const days = state.sortedDates.length || 1;
+        const timeStr = `${state.sortedDates[0].split('-').slice(1).join('/')}-${state.sortedDates[days-1].split('-').slice(1).join('/')}日均`;
+
+        state.results = {
+            time: timeStr, aTitle: base.aVal, bTitle: base.bVal,
+            counts: rawCols.map(c => ({
+                label: c, valA: stats.A.counts[c]/days, valB: stats.B.counts[c]/days,
+                lift: (stats.A.counts[c]-stats.B.counts[c])/stats.B.counts[c]
+            })),
+            rates: metrics.map(m => {
+                const nA = stats.A.counts[m.num], dA = stats.A.counts[m.den];
+                const nB = stats.B.counts[m.num], dB = stats.B.counts[m.den];
+                const pA = nA/dA, pB = nB/dB, pool = (nA+nB)/(dA+dB);
+                const se = Math.sqrt(pool*(1-pool)*(1/dA+1/dB));
+                const pVal = 2 * (1 - jStat.normal.cdf(Math.abs((pA - pB)/se), 0, 1));
+                return {
+                    name: m.name, valA: pA, valB: pB, lift: (pA-pB)/pB, p: pVal,
+                    dailyA: state.sortedDates.map(d => stats.A.daily[d][m.num]/stats.A.daily[d][m.den]),
+                    dailyB: state.sortedDates.map(d => stats.B.daily[d][m.num]/stats.B.daily[d][m.den])
+                };
+            })
+        };
         renderReport();
     };
 
     function renderReport() {
         document.getElementById('emptyState').classList.add('hidden');
         document.getElementById('resultArea').classList.remove('hidden');
-        
-        // 填充汇总表
-        const tbody = document.getElementById('scorecardBody'); tbody.innerHTML = "";
-        const selector = document.getElementById('chartMetricSelector'); selector.innerHTML = "";
+        const res = state.results;
 
-        state.results.forEach((res, idx) => {
-            const isSig = res.p < 0.05;
-            const liftColor = res.lift > 0 ? (isSig?'text-emerald-600':'text-emerald-400') : (isSig?'text-red-600':'text-red-400');
-            
-            tbody.innerHTML += `
-                <tr class="border-b hover:bg-slate-50 transition-colors">
-                    <td class="px-6 py-5 font-black text-slate-800">${res.name}</td>
-                    <td class="px-6 py-5 font-mono">${(res.ctrA*100).toFixed(2)}%</td>
-                    <td class="px-6 py-5 font-mono text-slate-400">${(res.ctrB*100).toFixed(2)}%</td>
-                    <td class="px-6 py-5 text-center font-black ${liftColor} text-sm">${(res.lift*100).toFixed(2)}%</td>
-                    <td class="px-6 py-5 text-right">
-                        <span class="px-2 py-1 rounded text-[10px] font-black ${isSig?'bg-emerald-100 text-emerald-700':'bg-slate-100 text-slate-400'}">
-                            P=${res.p.toFixed(5)} ${isSig?'★':''}
-                        </span>
-                    </td>
-                </tr>
-            `;
-            selector.add(new Option(res.name, idx));
-        });
+        // 表头
+        let h = `<tr><th class="px-6 py-4">人群维度</th><th class="px-6 py-4">行为时间</th>`;
+        res.counts.forEach(c => h += `<th class="px-6 py-4">${c.label}</th>`);
+        res.rates.forEach(r => h += `<th class="px-6 py-4 bg-blue-50/50">${r.name}</th>`);
+        h += `</tr>`;
+        document.getElementById('tableHeader').innerHTML = h;
 
+        const fN = (v) => Math.round(v).toLocaleString();
+        const fP = (v) => (v*100).toFixed(2)+'%';
+
+        // 表身
+        let b = `
+            <tr class="row-strategy"><td>${res.aTitle} (策略)</td><td>${res.time}</td>
+                ${res.counts.map(c => `<td>${fN(c.valA)}</td>`).join('')}
+                ${res.rates.map(r => `<td class="text-blue-700">${fP(r.valA)}</td>`).join('')}
+            </tr>
+            <tr class="row-control"><td>${res.bTitle} (对照)</td><td>${res.time}</td>
+                ${res.counts.map(c => `<td>${fN(c.valB)}</td>`).join('')}
+                ${res.rates.map(r => `<td class="text-slate-500">${fP(r.valB)}</td>`).join('')}
+            </tr>
+            <tr class="row-diff font-black"><td colspan="2">对比提升率 (Lift)</td>
+                ${res.counts.map(c => `<td class="${c.lift>0?'text-up':'text-down'}">${fP(c.lift)}</td>`).join('')}
+                ${res.rates.map(r => `<td class="${r.lift>0?'text-up':'text-down'}">${fP(r.lift)}</td>`).join('')}
+            </tr>
+            <tr class="row-p italic"><td colspan="2">显著性检测 (P-Value)</td>
+                ${res.counts.map(() => `<td>-</td>`).join('')}
+                ${res.rates.map(r => `<td class="${r.p<0.05?'bg-sig-high font-black':''}">${r.p.toFixed(4)} ${r.p<0.05?'★':''}</td>`).join('')}
+            </tr>
+        `;
+        document.getElementById('tableBody').innerHTML = b;
+
+        const sel = document.getElementById('chartSelector');
+        sel.innerHTML = ""; res.rates.forEach((r, i) => sel.add(new Option(r.name, i)));
         updateChart();
-        addLog("全量分析已完成！");
     }
 
     function updateChart() {
         if(state.chart) state.chart.destroy();
-        const res = state.results[document.getElementById('chartMetricSelector').value];
-        const ctx = document.getElementById('trendChart').getContext('2d');
-        
-        state.chart = new Chart(ctx, {
+        const res = state.results.rates[document.getElementById('chartSelector').value];
+        state.chart = new Chart(document.getElementById('trendChart'), {
             type: 'line',
             data: {
-                labels: state.sortedDates.map(d => d.includes('-') ? d.split('-').slice(1).join('/') : d),
+                labels: state.sortedDates.map(d => d.slice(-5)),
                 datasets: [
-                    { label: '策略组(A)', data: state.sortedDates.map(d => res.a.daily[d] ? (res.a.daily[d].n/res.a.daily[d].d*100).toFixed(2) : null), borderColor: '#3b82f6', tension: 0.3, borderWidth: 3, pointRadius: 4 },
-                    { label: '对照组(B)', data: state.sortedDates.map(d => res.b.daily[d] ? (res.b.daily[d].n/res.b.daily[d].d*100).toFixed(2) : null), borderColor: '#cbd5e1', borderDash: [5, 5], tension: 0.3 }
+                    { label: '策略组(A)', data: res.dailyA.map(v => (v*100).toFixed(2)), borderColor: '#3b82f6', tension: 0.3, borderWidth: 3, pointRadius: 4 },
+                    { label: '对照组(B)', data: res.dailyB.map(v => (v*100).toFixed(2)), borderColor: '#94a3b8', borderDash: [4, 4], tension: 0.3 }
                 ]
             },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top', labels: { font: { weight: 'bold' } } } } }
+            options: { responsive: true, maintainAspectRatio: false }
         });
     }
 
     document.getElementById('exportBtn').onclick = function() {
-        const aoa = [["指标名称", "策略组CTR", "对照组CTR", "提升幅度", "显著性(P值)", "结论"]];
-        state.results.forEach(r => {
-            aoa.push([r.name, (r.ctrA*100).toFixed(2)+"%", (r.ctrB*100).toFixed(2)+"%", (r.lift*100).toFixed(2)+"%", r.p.toFixed(6), r.p<0.05?(r.lift>0?"正向显著":"负向显著"):"不显著"]);
-        });
+        const res = state.results;
+        const aoa = [
+            ["人群维度", "行为时间", ...res.counts.map(c => c.label), ...res.rates.map(r => r.name)],
+            [`${res.aTitle} (策略)`, res.time, ...res.counts.map(c => Math.round(c.valA)), ...res.rates.map(r => (r.valA*100).toFixed(2)+'%')],
+            [`${res.bTitle} (对照)`, res.time, ...res.counts.map(c => Math.round(c.valB)), ...res.rates.map(r => (r.valB*100).toFixed(2)+'%')],
+            ["对比提效", "", ...res.counts.map(c => (c.lift*100).toFixed(2)+'%'), ...res.rates.map(r => (r.lift*100).toFixed(2)+'%')],
+            ["显著性P值", "", ...res.counts.map(() => "-"), ...res.rates.map(r => r.p.toFixed(5))]
+        ];
         const ws = XLSX.utils.aoa_to_sheet(aoa);
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "AB汇总报告");
-        XLSX.writeFile(wb, `AB_MultiReport_${new Date().getTime()}.xlsx`);
+        XLSX.utils.book_append_sheet(wb, ws, "AB大盘复盘");
+        XLSX.writeFile(wb, `AB_Full_Report_${new Date().getTime()}.xlsx`);
     };
 </script>
 </body>
